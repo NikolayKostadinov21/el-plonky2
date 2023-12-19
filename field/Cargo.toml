@@ -8,6 +8,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0.40", default-features = false }
+ff = { package = "ff", version = "0.13", features = ["derive"] }
 itertools = { version = "0.11.0", default-features = false, features = ["use_alloc"] }
 num = { version = "0.4", default-features = false, features = ["alloc", "rand"] }
 plonky2_util = { path = "../util", default-features = false }
