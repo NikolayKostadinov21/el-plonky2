@@ -7,8 +7,9 @@ use crate::field::types::Field;
 use crate::hash::hash_types::{HashOut, HashOutTarget, RichField};
 use crate::iop::ext_target::{ExtensionAlgebraTarget, ExtensionTarget};
 use crate::util::strided_view::PackedStridedView;
+use serde::Serialize;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Eq, PartialEq)]
 pub struct EvaluationVars<'a, F: RichField + Extendable<D>, const D: usize> {
     pub local_constants: &'a [F::Extension],
     pub local_wires: &'a [F::Extension],

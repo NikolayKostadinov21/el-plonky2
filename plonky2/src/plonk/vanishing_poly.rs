@@ -34,7 +34,7 @@ use serde::Serialize;
 pub struct VanishingPoly <'a, F: RichField + Extendable<D>, const D: usize> {
     common_data: &'a CommonCircuitData<F, D>,
     x: F::Extension,
-    // vars: EvaluationVars<'a, F, D>,
+    vars: EvaluationVars<'a, F, D>,
     local_zs: &'a [F::Extension],
     next_zs: &'a [F::Extension],
     local_lookup_zs: &'a [F::Extension],
@@ -86,6 +86,7 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     let vanishing_poly = VanishingPoly {
     common_data,
     x,
+    vars,
     local_zs,
     next_zs,
     local_lookup_zs,
@@ -101,7 +102,7 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     let mut writer = BufWriter::new(file);
     serde_json::to_writer(&mut writer, &vanishing_poly).unwrap();
     writer.flush().unwrap();
-    println!("vars {:?}", vars);
+
     let has_lookup = common_data.num_lookup_polys != 0;
     let max_degree = common_data.quotient_degree_factor;
     let num_prods = common_data.num_partial_products;
