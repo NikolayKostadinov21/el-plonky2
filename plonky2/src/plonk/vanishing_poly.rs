@@ -63,6 +63,19 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     alphas: &[F],
     deltas: &[F],
 ) -> Vec<F::Extension> {
+    println!("common_data {:?}", common_data);
+    println!("x {:?}", x);
+    println!("vars {:?}", vars);
+    println!("local_zs {:?}", local_zs);
+    println!("next_zs {:?}", next_zs);
+    println!("local_lookup_zs {:?}", local_lookup_zs);
+    println!("next_lookup_zs {:?}", next_lookup_zs);
+    println!("partial_products {:?}", partial_products);
+    println!("s_sigmas {:?}", s_sigmas);
+    println!("betas {:?}", betas);
+    println!("gammas {:?}", gammas);
+    println!("alphas {:?}", alphas);
+    println!("deltas {:?}", deltas);
     let has_lookup = common_data.num_lookup_polys != 0;
     let max_degree = common_data.quotient_degree_factor;
     let num_prods = common_data.num_partial_products;

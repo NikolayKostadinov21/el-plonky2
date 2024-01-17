@@ -76,6 +76,7 @@ pub(crate) fn verify_with_challenges<
         &challenges.plonk_alphas,
         &challenges.plonk_deltas,
     );
+    println!("vanishing_polys_zeta {:?}", vanishing_polys_zeta);
 
     // Check each polynomial identity, of the form `vanishing(x) = Z_H(x) quotient(x)`, at zeta.
     let quotient_polys_zeta = &proof.openings.quotient_polys;
