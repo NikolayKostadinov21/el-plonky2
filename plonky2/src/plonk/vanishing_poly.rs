@@ -108,9 +108,11 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     let num_prods = common_data.num_partial_products;
 
     let constraint_terms = evaluate_gate_constraints::<F, D>(common_data, vars);
+    println!("constraint_terms {:?}", constraint_terms);
 
     let lookup_selectors = &vars.local_constants[common_data.selectors_info.num_selectors()
-        ..common_data.selectors_info.num_selectors() + common_data.num_lookup_selectors];
+    ..common_data.selectors_info.num_selectors() + common_data.num_lookup_selectors];
+    println!("lookup_selectors {:?}", lookup_selectors);
 
     // The L_0(x) (Z(x) - 1) vanishing terms.
     let mut vanishing_z_1_terms = Vec::new();
@@ -124,6 +126,7 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     } else {
         Vec::new()
     };
+    println!("vanishing_all_lookup_terms {:?}", vanishing_all_lookup_terms);
 
     // The terms checking the partial products.
     let mut vanishing_partial_products_terms = Vec::new();
