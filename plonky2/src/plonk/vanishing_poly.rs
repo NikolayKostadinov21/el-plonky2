@@ -1,6 +1,8 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 
 use plonky2_field::polynomial::PolynomialCoeffs;
 use plonky2_util::ceil_div_usize;
@@ -26,6 +28,24 @@ use crate::util::partial_products::{check_partial_products, check_partial_produc
 use crate::util::reducing::ReducingFactorTarget;
 use crate::util::strided_view::PackedStridedView;
 use crate::with_context;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct VanishingPoly <'a, F: RichField + Extendable<D>, const D: usize> {
+    common_data: &'a CommonCircuitData<F, D>,
+    x: F::Extension,
+    // vars: EvaluationVars<'a, F, D>,
+    local_zs: &'a [F::Extension],
+    next_zs: &'a [F::Extension],
+    local_lookup_zs: &'a [F::Extension],
+    next_lookup_zs: &'a [F::Extension],
+    partial_products: &'a [F::Extension],
+    s_sigmas: &'a [F::Extension],
+    betas: &'a [F],
+    gammas: &'a [F],
+    alphas: &'a [F],
+    deltas: &'a [F],
+}
 
 /// Get the polynomial associated to a lookup table with current challenges.
 pub(crate) fn get_lut_poly<F: RichField + Extendable<D>, const D: usize>(
@@ -63,19 +83,25 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     alphas: &[F],
     deltas: &[F],
 ) -> Vec<F::Extension> {
-    println!("common_data {:?}", common_data);
-    println!("x {:?}", x);
+    let vanishingPoly = VanishingPoly {
+    common_data,
+    x,
+    local_zs,
+    next_zs,
+    local_lookup_zs,
+    next_lookup_zs,
+    partial_products,
+    s_sigmas,
+    betas,
+    gammas,
+    alphas,
+    deltas,
+    };
+    let file = File::create("./vanishing_poly.json").unwrap();
+    let mut writer = BufWriter::new(file);
+    serde_json::to_writer(&mut writer, &common_data).unwrap();
+    writer.flush().unwrap();
     println!("vars {:?}", vars);
-    println!("local_zs {:?}", local_zs);
-    println!("next_zs {:?}", next_zs);
-    println!("local_lookup_zs {:?}", local_lookup_zs);
-    println!("next_lookup_zs {:?}", next_lookup_zs);
-    println!("partial_products {:?}", partial_products);
-    println!("s_sigmas {:?}", s_sigmas);
-    println!("betas {:?}", betas);
-    println!("gammas {:?}", gammas);
-    println!("alphas {:?}", alphas);
-    println!("deltas {:?}", deltas);
     let has_lookup = common_data.num_lookup_polys != 0;
     let max_degree = common_data.quotient_degree_factor;
     let num_prods = common_data.num_partial_products;
