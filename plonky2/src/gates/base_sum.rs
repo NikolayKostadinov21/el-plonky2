@@ -76,8 +76,6 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
                     .product(),
                 );
             }
-        println!("vars {:?}", vars);
-        println!("constraints {:?}", constraints);
         constraints
     }
 
