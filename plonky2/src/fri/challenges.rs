@@ -55,6 +55,15 @@ impl<F: RichField, H: Hasher<F>> Challenger<F, H> {
             .map(|_| self.get_challenge().to_canonical_u64() as usize % lde_size)
             .collect();
 
+        // TODO:
+        println!("num_fri_queries {:?}", num_fri_queries);
+        println!("degree_bits {:?}", degree_bits);
+        println!("config.rate_bits {:?}", config.rate_bits);
+        println!("lde_size {:?}", lde_size);
+        println!("fri_alpha {:?}", fri_alpha);
+        println!("fri_betas {:?}", fri_betas);
+        println!("fri_pow_response {:?}", fri_pow_response);
+        println!("fri_query_indices {:?}", fri_query_indices);
         FriChallenges {
             fri_alpha,
             fri_betas,
