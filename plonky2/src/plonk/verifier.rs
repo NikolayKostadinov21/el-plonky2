@@ -84,7 +84,7 @@ pub(crate) fn verify_with_challenges<
         .plonk_zeta
         .exp_power_of_2(common_data.degree_bits());
     let z_h_zeta = zeta_pow_deg - F::Extension::ONE;
-    // println!("z_h_zeta {:?}", z_h_zeta);
+    println!("z_h_zeta {:?}", z_h_zeta);
     // `quotient_polys_zeta` holds `num_challenges * quotient_degree_factor` evaluations.
     // Each chunk of `quotient_degree_factor` holds the evaluations of `t_0(zeta),...,t_{quotient_degree_factor-1}(zeta)`
     // where the "real" quotient polynomial is `t(X) = t_0(X) + t_1(X)*X^n + t_2(X)*X^{2n} + ...`.
@@ -94,13 +94,12 @@ pub(crate) fn verify_with_challenges<
         .chunks(common_data.quotient_degree_factor)
         .enumerate()
     {
-        // println!("i {:?}", i);
-        // println!("vanishing_polys_zeta {:?}", vanishing_polys_zeta[i]);
+        println!("i {:?}", i);
         ensure!(vanishing_polys_zeta[i] == z_h_zeta * reduce_with_powers(chunk, zeta_pow_deg));
-        // println!(
-        //     "reduce_with_powers(chunk, zeta_pow_deg) {:?}",
-        //     reduce_with_powers(chunk, zeta_pow_deg)
-        // );
+        println!(
+            "reduce_with_powers(chunk, zeta_pow_deg) {:?}",
+            reduce_with_powers(chunk, zeta_pow_deg)
+        );
     }
 
     let merkle_caps = &[
