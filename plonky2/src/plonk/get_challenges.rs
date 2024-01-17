@@ -37,6 +37,7 @@ fn get_challenges<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, cons
 ) -> anyhow::Result<ProofChallenges<F, D>> {
     let config = &common_data.config;
     let num_challenges = config.num_challenges;
+    println!("num_challenges {:?}", num_challenges);
 
     let mut challenger = Challenger::<F, C::Hasher>::new();
     let has_lookup = common_data.num_lookup_polys != 0;
@@ -44,10 +45,15 @@ fn get_challenges<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, cons
     // Observe the instance.
     challenger.observe_hash::<C::Hasher>(*circuit_digest);
     challenger.observe_hash::<C::InnerHasher>(public_inputs_hash);
+    println!("circuit_digest {:?}", circuit_digest);
+    println!("public_inputs_hash {:?}", public_inputs_hash);
 
     challenger.observe_cap::<C::Hasher>(wires_cap);
+    println!("wires_cap 0 {:?}", wires_cap.0[0]);
     let plonk_betas = challenger.get_n_challenges(num_challenges);
+    println!("plonk_betas 0 {:?}", plonk_betas[0]);
     let plonk_gammas = challenger.get_n_challenges(num_challenges);
+    println!("plonk_gammas 0 {:?}", plonk_gammas[0]);
 
     // If there are lookups in the circuit, we should get delta challenges as well.
     // But we can use the already generated `plonk_betas` and `plonk_gammas` as the first `plonk_deltas` challenges.
@@ -67,9 +73,11 @@ fn get_challenges<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, cons
     // `plonk_zs_partial_products_cap` also contains the commitment to lookup polynomials.
     challenger.observe_cap::<C::Hasher>(plonk_zs_partial_products_cap);
     let plonk_alphas = challenger.get_n_challenges(num_challenges);
+    println!("plonk_alphas 0 {:?}", plonk_alphas[0]);
 
     challenger.observe_cap::<C::Hasher>(quotient_polys_cap);
     let plonk_zeta = challenger.get_extension_challenge::<D>();
+    println!("plonk_zeta {:?}", plonk_zeta);
 
     challenger.observe_openings(&openings.to_fri_openings());
 
