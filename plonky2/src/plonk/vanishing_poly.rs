@@ -83,7 +83,7 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     alphas: &[F],
     deltas: &[F],
 ) -> Vec<F::Extension> {
-    let vanishingPoly = VanishingPoly {
+    let vanishing_poly = VanishingPoly {
     common_data,
     x,
     local_zs,
@@ -99,7 +99,7 @@ pub(crate) fn eval_vanishing_poly<F: RichField + Extendable<D>, const D: usize>(
     };
     let file = File::create("./vanishing_poly.json").unwrap();
     let mut writer = BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &common_data).unwrap();
+    serde_json::to_writer(&mut writer, &vanishing_poly).unwrap();
     writer.flush().unwrap();
     println!("vars {:?}", vars);
     let has_lookup = common_data.num_lookup_polys != 0;
