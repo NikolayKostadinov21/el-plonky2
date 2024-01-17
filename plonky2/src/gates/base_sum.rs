@@ -74,8 +74,10 @@ impl<F: RichField + Extendable<D>, const D: usize, const B: usize> Gate<F, D> fo
                 (0..B)
                     .map(|i| limb - F::Extension::from_canonical_usize(i))
                     .product(),
-            );
-        }
+                );
+            }
+        println!("vars {:?}", vars);
+        println!("constraints {:?}", constraints);
         constraints
     }
 
