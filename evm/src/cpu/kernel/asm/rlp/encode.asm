@@ -1,28 +1,20 @@
-// RLP-encode a fixed-length 160 bit (20 byte) string. Assumes string < 2^160.
+// Convenience macro to RLP-encode a fixed-length 160 bit (20 byte) string
+// and return where we left off. Assumes string < 2^160.
 // Pre stack: rlp_addr, string, retdest
 // Post stack: rlp_addr
-global encode_rlp_160:
-    PUSH 20
-    %jump(encode_rlp_fixed)
-
-// Convenience macro to call encode_rlp_160 and return where we left off.
 %macro encode_rlp_160
-    %stack (rlp_addr, string) -> (rlp_addr, string, %%after)
-    %jump(encode_rlp_160)
+    %stack (rlp_addr, string) -> (20, rlp_addr, string, %%after)
+    %jump(encode_rlp_fixed)
 %%after:
 %endmacro
 
-// RLP-encode a fixed-length 256 bit (32 byte) string.
+// Convenience macro to RLP-encode a fixed-length 256 bit (32 byte) string
+// and return where we left off.
 // Pre stack: rlp_addr, string, retdest
 // Post stack: rlp_addr
-global encode_rlp_256:
-    PUSH 32
-    %jump(encode_rlp_fixed)
-
-// Convenience macro to call encode_rlp_256 and return where we left off.
 %macro encode_rlp_256
-    %stack (rlp_addr, string) -> (rlp_addr, string, %%after)
-    %jump(encode_rlp_256)
+    %stack (rlp_addr, string) -> (32, rlp_addr, string, %%after)
+    %jump(encode_rlp_fixed)
 %%after:
 %endmacro
 
@@ -84,8 +76,10 @@ global encode_rlp_multi_byte_string_prefix:
     %jumpi(encode_rlp_multi_byte_string_prefix_large)
     // Medium case; prefix is 0x80 + str_len.
     // stack: rlp_addr, str_len, retdest
-    DUP1
-    SWAP2 %add_const(0x80)
+    PUSH 0x80
+    DUP2
+    // stack: rlp_addr, 0x80, rlp_addr, str_len, retdest
+    SWAP3 ADD
     // stack: prefix, rlp_addr, rlp_addr, retdest
     MSTORE_GENERAL
     // stack: rlp_addr, retdest
@@ -178,7 +172,7 @@ global prepend_rlp_list_prefix:
 
     // If we got here, we have a small list, so we prepend 0xc0 + len at rlp_address 8.
     // stack: payload_len, end_rlp_addr, start_rlp_addr, retdest
-    DUP3 %decrement // offset of prefix
+    PUSH 1 DUP4 SUB // offset of prefix
     DUP2 %add_const(0xc0)
     // stack: prefix_byte, start_rlp_addr-1, payload_len, end_rlp_addr, start_rlp_addr, retdest
     MSTORE_GENERAL
@@ -198,10 +192,11 @@ prepend_rlp_list_prefix_big:
     DUP1 %num_bytes
     // stack: len_of_len, payload_len, end_rlp_addr, start_rlp_addr, retdest
     DUP1
-    DUP5 %decrement // start_rlp_addr - 1
+    PUSH 1 DUP6 SUB // start_rlp_addr - 1
     SUB
     // stack: prefix_start_rlp_addr, len_of_len, payload_len, end_rlp_addr, start_rlp_addr, retdest
-    DUP2 %add_const(0xf7) DUP2 %swap_mstore // rlp[prefix_start_rlp_addr] = 0xf7 + len_of_len
+    DUP1
+    DUP3 %add_const(0xf7) MSTORE_GENERAL // rlp[prefix_start_rlp_addr] = 0xf7 + len_of_len
     // stack: prefix_start_rlp_addr, len_of_len, payload_len, end_rlp_addr, start_rlp_addr, retdest
     DUP1 %increment // start_len_rlp_addr = prefix_start_rlp_addr + 1
     %stack (start_len_rlp_addr, prefix_start_rlp_addr, len_of_len, payload_len, end_rlp_addr, start_rlp_addr, retdest)

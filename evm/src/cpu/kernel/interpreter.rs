@@ -1,26 +1,30 @@
 //! An EVM interpreter for testing and debugging purposes.
 
 use core::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
 use anyhow::bail;
-use ethereum_types::{U256, U512};
+use eth_trie_utils::partial_trie::PartialTrie;
+use ethereum_types::{BigEndianHash, H160, H256, U256, U512};
 use keccak_hash::keccak;
 use plonky2::field::goldilocks_field::GoldilocksField;
 
 use super::assembler::BYTES_PER_OFFSET;
+use super::utils::u256_from_bool;
 use crate::cpu::kernel::aggregator::KERNEL;
 use crate::cpu::kernel::constants::context_metadata::ContextMetadata;
 use crate::cpu::kernel::constants::global_metadata::GlobalMetadata;
 use crate::cpu::kernel::constants::txn_fields::NormalizedTxnField;
 use crate::cpu::stack::MAX_USER_STACK_SIZE;
 use crate::extension_tower::BN_BASE;
+use crate::generation::mpt::load_all_mpts;
 use crate::generation::prover_input::ProverInputFn;
-use crate::generation::state::GenerationState;
+use crate::generation::rlp::all_rlp_prover_inputs_reversed;
+use crate::generation::state::{all_withdrawals_prover_inputs_reversed, GenerationState};
 use crate::generation::GenerationInputs;
 use crate::memory::segments::{Segment, SEGMENT_SCALING_FACTOR};
-use crate::util::u256_to_usize;
+use crate::util::{h2u, u256_to_usize};
 use crate::witness::errors::{ProgramError, ProverInputError};
 use crate::witness::gas::gas_to_charge;
 use crate::witness::memory::{MemoryAddress, MemoryContextState, MemorySegmentState, MemoryState};
@@ -53,7 +57,6 @@ impl MemoryState {
 }
 
 pub(crate) struct Interpreter<'a> {
-    jumpdests: Vec<usize>,
     pub(crate) generation_state: GenerationState<F>,
     prover_inputs_map: &'a HashMap<usize, ProverInputFn>,
     pub(crate) halt_offsets: Vec<usize>,
@@ -150,6 +153,18 @@ impl<'a> Interpreter<'a> {
         result
     }
 
+    /// Returns an instance of `Interpreter` given `GenerationInputs`, and assuming we are
+    /// initializing with the `KERNEL` code.
+    pub(crate) fn new_with_generation_inputs_and_kernel(
+        initial_offset: usize,
+        initial_stack: Vec<U256>,
+        inputs: GenerationInputs,
+    ) -> Self {
+        let mut result = Self::new_with_kernel(initial_offset, initial_stack);
+        result.initialize_interpreter_state_with_kernel(inputs);
+        result
+    }
+
     pub(crate) fn new(
         code: &'a [u8],
         initial_offset: usize,
@@ -157,7 +172,6 @@ impl<'a> Interpreter<'a> {
         prover_inputs: &'a HashMap<usize, ProverInputFn>,
     ) -> Self {
         let mut result = Self {
-            jumpdests: find_jumpdests(code),
             generation_state: GenerationState::new(GenerationInputs::default(), code)
                 .expect("Default inputs are known-good"),
             prover_inputs_map: prover_inputs,
@@ -179,6 +193,136 @@ impl<'a> Interpreter<'a> {
         }
 
         result
+    }
+
+    /// Initializes the interpreter state given `GenerationInputs`, using the KERNEL code.
+    pub(crate) fn initialize_interpreter_state_with_kernel(&mut self, inputs: GenerationInputs) {
+        self.initialize_interpreter_state(inputs, KERNEL.code_hash, KERNEL.code.len());
+    }
+
+    /// Initializes the interpreter state given `GenerationInputs`.
+    pub(crate) fn initialize_interpreter_state(
+        &mut self,
+        inputs: GenerationInputs,
+        kernel_hash: H256,
+        kernel_code_len: usize,
+    ) {
+        let tries = &inputs.tries;
+
+        // Set state's inputs.
+        self.generation_state.inputs = inputs.clone();
+
+        // Initialize the MPT's pointers.
+        let (trie_root_ptrs, trie_data) =
+            load_all_mpts(tries).expect("Invalid MPT data for preinitialization");
+        let trie_roots_after = &inputs.trie_roots_after;
+        self.generation_state.trie_root_ptrs = trie_root_ptrs;
+
+        // Initialize the `TrieData` segment.
+        for (i, data) in trie_data.iter().enumerate() {
+            let trie_addr = MemoryAddress::new(0, Segment::TrieData, i);
+            self.generation_state.memory.set(trie_addr, data.into());
+        }
+
+        // Update the RLP and withdrawal prover inputs.
+        let rlp_prover_inputs =
+            all_rlp_prover_inputs_reversed(inputs.clone().signed_txn.as_ref().unwrap_or(&vec![]));
+        let withdrawal_prover_inputs = all_withdrawals_prover_inputs_reversed(&inputs.withdrawals);
+        self.generation_state.rlp_prover_inputs = rlp_prover_inputs;
+        self.generation_state.withdrawal_prover_inputs = withdrawal_prover_inputs;
+
+        // Set `GlobalMetadata` values.
+        let metadata = &inputs.block_metadata;
+        let global_metadata_to_set = [
+            (
+                GlobalMetadata::BlockBeneficiary,
+                U256::from_big_endian(&metadata.block_beneficiary.0),
+            ),
+            (GlobalMetadata::BlockTimestamp, metadata.block_timestamp),
+            (GlobalMetadata::BlockNumber, metadata.block_number),
+            (GlobalMetadata::BlockDifficulty, metadata.block_difficulty),
+            (
+                GlobalMetadata::BlockRandom,
+                metadata.block_random.into_uint(),
+            ),
+            (GlobalMetadata::BlockGasLimit, metadata.block_gaslimit),
+            (GlobalMetadata::BlockChainId, metadata.block_chain_id),
+            (GlobalMetadata::BlockBaseFee, metadata.block_base_fee),
+            (
+                GlobalMetadata::BlockCurrentHash,
+                h2u(inputs.block_hashes.cur_hash),
+            ),
+            (GlobalMetadata::BlockGasUsed, metadata.block_gas_used),
+            (GlobalMetadata::BlockGasUsedBefore, inputs.gas_used_before),
+            (GlobalMetadata::BlockGasUsedAfter, inputs.gas_used_after),
+            (GlobalMetadata::TxnNumberBefore, inputs.txn_number_before),
+            (
+                GlobalMetadata::TxnNumberAfter,
+                inputs.txn_number_before + if inputs.signed_txn.is_some() { 1 } else { 0 },
+            ),
+            (
+                GlobalMetadata::StateTrieRootDigestBefore,
+                h2u(tries.state_trie.hash()),
+            ),
+            (
+                GlobalMetadata::TransactionTrieRootDigestBefore,
+                h2u(tries.transactions_trie.hash()),
+            ),
+            (
+                GlobalMetadata::ReceiptTrieRootDigestBefore,
+                h2u(tries.receipts_trie.hash()),
+            ),
+            (
+                GlobalMetadata::StateTrieRootDigestAfter,
+                h2u(trie_roots_after.state_root),
+            ),
+            (
+                GlobalMetadata::TransactionTrieRootDigestAfter,
+                h2u(trie_roots_after.transactions_root),
+            ),
+            (
+                GlobalMetadata::ReceiptTrieRootDigestAfter,
+                h2u(trie_roots_after.receipts_root),
+            ),
+            (GlobalMetadata::KernelHash, h2u(kernel_hash)),
+            (GlobalMetadata::KernelLen, kernel_code_len.into()),
+        ];
+
+        self.set_global_metadata_multi_fields(&global_metadata_to_set);
+
+        // Set final block bloom values.
+        let final_block_bloom_fields = (0..8)
+            .map(|i| {
+                (
+                    MemoryAddress::new_u256s(
+                        U256::zero(),
+                        (Segment::GlobalBlockBloom.unscale()).into(),
+                        i.into(),
+                    )
+                    .unwrap(),
+                    metadata.block_bloom[i],
+                )
+            })
+            .collect::<Vec<_>>();
+
+        self.set_memory_multi_addresses(&final_block_bloom_fields);
+
+        // Set previous block hash.
+        let block_hashes_fields = (0..256)
+            .map(|i| {
+                (
+                    MemoryAddress::new_u256s(
+                        U256::zero(),
+                        (Segment::BlockHashes.unscale()).into(),
+                        i.into(),
+                    )
+                    .unwrap(),
+                    h2u(inputs.block_hashes.prev_hashes[i]),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        self.set_memory_multi_addresses(&block_hashes_fields);
     }
 
     fn checkpoint(&self) -> InterpreterCheckpoint {
@@ -422,6 +566,14 @@ impl<'a> Interpreter<'a> {
                 .contexts
                 .push(MemoryContextState::default());
         }
+        self.generation_state.memory.set(
+            MemoryAddress::new(
+                context,
+                Segment::ContextMetadata,
+                ContextMetadata::CodeSize.unscale(),
+            ),
+            code.len().into(),
+        );
         self.generation_state.memory.contexts[context].segments[Segment::Code.unscale()].content =
             code.into_iter().map(U256::from).collect();
     }
@@ -440,7 +592,11 @@ impl<'a> Interpreter<'a> {
             .collect()
     }
 
-    fn incr(&mut self, n: usize) {
+    pub(crate) fn set_jumpdest_analysis_inputs(&mut self, jumps: HashMap<usize, BTreeSet<usize>>) {
+        self.generation_state.set_jumpdest_analysis_inputs(jumps);
+    }
+
+    pub(crate) fn incr(&mut self, n: usize) {
         self.generation_state.registers.program_counter += n;
     }
 
@@ -858,8 +1014,6 @@ impl<'a> Interpreter<'a> {
         let addr = self.pop()?;
         let (context, segment, offset) = unpack_address!(addr);
 
-        // Not strictly needed but here to avoid surprises with MSIZE.
-        assert_ne!(segment, Segment::MainMemory, "Call KECCAK256 instead.");
         let size = self.pop()?.as_usize();
         let bytes = (offset..offset + size)
             .map(|i| {
@@ -929,13 +1083,37 @@ impl<'a> Interpreter<'a> {
         self.push(syscall_info)
     }
 
+    fn set_jumpdest_bit(&mut self, x: U256) -> U256 {
+        if self.generation_state.memory.contexts[self.context()].segments
+            [Segment::JumpdestBits.unscale()]
+        .content
+        .len()
+            > x.low_u32() as usize
+        {
+            self.generation_state.memory.get(MemoryAddress {
+                context: self.context(),
+                segment: Segment::JumpdestBits.unscale(),
+                virt: x.low_u32() as usize,
+            })
+        } else {
+            0.into()
+        }
+    }
     fn run_jump(&mut self) -> anyhow::Result<(), ProgramError> {
         let x = self.pop()?;
+
+        let jumpdest_bit = self.set_jumpdest_bit(x);
+
         // Check that the destination is valid.
         let x: u32 = x
             .try_into()
             .map_err(|_| ProgramError::InvalidJumpDestination)?;
-        self.jump_to(x as usize)
+
+        if !self.is_kernel() && jumpdest_bit != U256::one() {
+            return Err(ProgramError::InvalidJumpDestination);
+        }
+
+        self.jump_to(x as usize, false)
     }
 
     fn run_jumpi(&mut self) -> anyhow::Result<(), ProgramError> {
@@ -945,9 +1123,13 @@ impl<'a> Interpreter<'a> {
             let x: u32 = x
                 .try_into()
                 .map_err(|_| ProgramError::InvalidJumpiDestination)?;
-            self.jump_to(x as usize)?;
+            self.jump_to(x as usize, true)?;
         }
+        let jumpdest_bit = self.set_jumpdest_bit(x);
 
+        if !b.is_zero() && !self.is_kernel() && jumpdest_bit != U256::one() {
+            return Err(ProgramError::InvalidJumpiDestination);
+        }
         Ok(())
     }
 
@@ -967,13 +1149,19 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn jump_to(&mut self, offset: usize) -> anyhow::Result<(), ProgramError> {
-        // The JUMPDEST rule is not enforced in kernel mode.
-        if !self.is_kernel() && self.jumpdests.binary_search(&offset).is_err() {
-            return Err(ProgramError::InvalidJumpDestination);
-        }
-
+    fn jump_to(&mut self, offset: usize, is_jumpi: bool) -> anyhow::Result<(), ProgramError> {
         self.generation_state.registers.program_counter = offset;
+
+        if offset == KERNEL.global_labels["observe_new_address"] {
+            let tip_u256 = stack_peek(&self.generation_state, 0)?;
+            let tip_h256 = H256::from_uint(&tip_u256);
+            let tip_h160 = H160::from(tip_h256);
+            self.generation_state.observe_address(tip_h160);
+        } else if offset == KERNEL.global_labels["observe_new_contract"] {
+            let tip_u256 = stack_peek(&self.generation_state, 0)?;
+            let tip_h256 = H256::from_uint(&tip_u256);
+            self.generation_state.observe_contract(tip_h256)?;
+        }
 
         if self.halt_offsets.contains(&offset) {
             self.running = false;
@@ -1268,22 +1456,6 @@ const SIGN_MASK: U256 = U256([
     0xffffffffffffffff,
     0x7fffffffffffffff,
 ]);
-
-/// Return the (ordered) JUMPDEST offsets in the code.
-fn find_jumpdests(code: &[u8]) -> Vec<usize> {
-    let mut offset = 0;
-    let mut res = Vec::new();
-    while offset < code.len() {
-        let opcode = code[offset];
-        match opcode {
-            0x5b => res.push(offset),
-            x if (0x60..0x80).contains(&x) => offset += x as usize - 0x5f, // PUSH instruction, disregard data.
-            _ => (),
-        }
-        offset += 1;
-    }
-    res
-}
 
 fn get_mnemonic(opcode: u8) -> &'static str {
     match opcode {
