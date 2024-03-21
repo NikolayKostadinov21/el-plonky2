@@ -109,6 +109,17 @@ impl CircuitConfig {
             ..Self::standard_recursion_config()
         }
     }
+
+    pub fn secure_config() -> Self {
+        Self {
+            fri_config: FriConfig {
+                proof_of_work_bits: 14,
+                num_query_rounds: 38,
+                ..Self::standard_recursion_config().fri_config
+            },
+            ..Self::standard_recursion_config()
+        }
+    }
 }
 
 /// Mock circuit data to only do witness generation without generating a proof.
