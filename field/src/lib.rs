@@ -3,7 +3,6 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::len_without_is_empty)]
 #![allow(clippy::needless_range_loop)]
-#![feature(stdsimd)]
 #![feature(specialization)]
 #![cfg_attr(not(test), no_std)]
 
@@ -12,6 +11,7 @@ extern crate alloc;
 pub(crate) mod arch;
 
 pub mod batch_util;
+pub mod bn254;
 pub mod cosets;
 pub mod extension;
 pub mod fft;
@@ -26,7 +26,6 @@ pub mod secp256k1_base;
 pub mod secp256k1_scalar;
 pub mod types;
 pub mod zero_poly_coset;
-pub mod bn254;
 
 #[cfg(test)]
 mod field_testing;
